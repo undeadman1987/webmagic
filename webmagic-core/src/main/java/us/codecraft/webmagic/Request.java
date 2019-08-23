@@ -20,6 +20,8 @@ public class Request implements Serializable {
 
     public static final String CYCLE_TRIED_TIMES = "_cycle_tried_times";
 
+    public static final boolean WITHOUT_DUPLICATE = false;
+
     private String url;
 
     private String method;
@@ -52,6 +54,18 @@ public class Request implements Serializable {
     private boolean binaryContent = false;
 
     private String charset;
+
+    /**
+     * When it is set to TRUE, the scheduler will not check duplicate to this request.
+     *
+     */
+    private boolean withoutDuplicate = WITHOUT_DUPLICATE;
+
+    /**
+     * Used to indicate the current depth for this request
+     *
+     */
+    private int currentDepth = 0;
 
     public Request() {
     }
@@ -176,6 +190,24 @@ public class Request implements Serializable {
 
     public Request setBinaryContent(boolean binaryContent) {
         this.binaryContent = binaryContent;
+        return this;
+    }
+
+    public boolean isWithoutDuplicate() {
+        return withoutDuplicate;
+    }
+
+    public Request setWithoutDuplicate() {
+        this.withoutDuplicate = true;
+        return this;
+    }
+
+    public int getCurrentDepth() {
+        return currentDepth;
+    }
+
+    public Request setCurrentDepth(int currentDepth) {
+        this.currentDepth = currentDepth;
         return this;
     }
 

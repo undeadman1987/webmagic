@@ -31,5 +31,5 @@ public interface SpiderStatusMXBean {
 
     public Date getStartTime();
 
-    public int getPagePerSecond();
+    public double getPagePerSecond();
 }

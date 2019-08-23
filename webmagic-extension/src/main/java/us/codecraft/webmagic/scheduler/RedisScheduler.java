@@ -26,6 +26,8 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
 
     private static final String ITEM_PREFIX = "item_";
 
+    private String prefix = "";
+
     public RedisScheduler(String host) {
         this(new JedisPool(new JedisPoolConfig(), host));
     }
@@ -35,13 +37,22 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
         setDuplicateRemover(this);
     }
 
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public RedisScheduler setPrefix(String prefix) {
+        this.prefix = prefix;
+        return this;
+    }
+
     @Override
     public void resetDuplicateCheck(Task task) {
         Jedis jedis = pool.getResource();
         try {
             jedis.del(getSetKey(task));
         } finally {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
@@ -51,7 +62,7 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
         try {
             return jedis.sadd(getSetKey(task), request.getUrl()) == 0;
         } finally {
-            pool.returnResource(jedis);
+            jedis.close();
         }
 
     }
@@ -62,16 +73,14 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
         try {
             jedis.rpush(getQueueKey(task), request.getUrl());
             if (checkForAdditionalInfo(request)) {
-                String field = DigestUtils.shaHex(request.getUrl());
-                String value = JSON.toJSONString(request);
-                jedis.hset((ITEM_PREFIX + task.getUUID()), field, value);
+                setExtrasInItem(jedis, request, task);
             }
         } finally {
             jedis.close();
         }
     }
 
-    private boolean checkForAdditionalInfo(Request request) {
+    protected boolean checkForAdditionalInfo(Request request) {
         if (request == null) {
             return false;
         }
@@ -91,6 +100,9 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
         if (request.getExtras() != null && !request.getExtras().isEmpty()) {
             return true;
         }
+        if (request.getCurrentDepth() != 0) {
+            return true;
+        }
         if (request.getPriority() != 0L) {
             return true;
         }
@@ -103,33 +115,42 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
         Jedis jedis = pool.getResource();
         try {
             String url = jedis.lpop(getQueueKey(task));
-            if (url == null) {
+            if (StringUtils.isBlank(url)) {
                 return null;
             }
-            String key = ITEM_PREFIX + task.getUUID();
-            String field = DigestUtils.shaHex(url);
-            byte[] bytes = jedis.hget(key.getBytes(), field.getBytes());
-            if (bytes != null) {
-                Request o = JSON.parseObject(new String(bytes), Request.class);
-                return o;
-            }
-            Request request = new Request(url);
-            return request;
+            return getExtrasInItem(jedis, url, task);
         } finally {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
     protected String getSetKey(Task task) {
-        return SET_PREFIX + task.getUUID();
+        return prefix + SET_PREFIX + task.getUUID();
     }
 
     protected String getQueueKey(Task task) {
-        return QUEUE_PREFIX + task.getUUID();
+        return prefix + QUEUE_PREFIX + task.getUUID();
     }
 
     protected String getItemKey(Task task) {
-        return ITEM_PREFIX + task.getUUID();
+        return prefix + ITEM_PREFIX + task.getUUID();
+    }
+
+    protected void setExtrasInItem(Jedis jedis, Request request, Task task) {
+        String field = DigestUtils.shaHex(request.getUrl());
+        String value = JSON.toJSONString(request);
+        jedis.hset(getItemKey(task), field, value);
+    }
+
+    protected Request getExtrasInItem(Jedis jedis, String url, Task task) {
+        String key = getItemKey(task);
+        String field = DigestUtils.shaHex(url);
+        byte[] bytes = jedis.hget(key.getBytes(), field.getBytes());
+        if (bytes != null) {
+            jedis.hdel(key.getBytes(), field.getBytes());
+            return JSON.parseObject(new String(bytes), Request.class);
+        }
+        return new Request(url);
     }
 
     @Override
@@ -139,7 +160,7 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
             Long size = jedis.llen(getQueueKey(task));
             return size.intValue();
         } finally {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
@@ -150,7 +171,7 @@ public class RedisScheduler extends DuplicateRemovedScheduler implements Monitor
             Long size = jedis.scard(getSetKey(task));
             return size.intValue();
         } finally {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 }

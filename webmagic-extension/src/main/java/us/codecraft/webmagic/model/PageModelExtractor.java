@@ -29,6 +29,8 @@ import static us.codecraft.webmagic.model.annotation.ExtractBy.Source.RawText;
  */
 class PageModelExtractor {
 
+    private List<Pattern> matchUrlPatterns = new ArrayList<Pattern>();
+
     private List<Pattern> targetUrlPatterns = new ArrayList<Pattern>();
 
     private Selector targetUrlRegionSelector;
@@ -166,7 +168,17 @@ class PageModelExtractor {
     }
 
     private void initClassExtractors() {
-        Annotation annotation = clazz.getAnnotation(TargetUrl.class);
+        Annotation annotation = clazz.getAnnotation(MatchUrl.class);
+        if (annotation == null) {
+            matchUrlPatterns.add(Pattern.compile(".*"));
+        } else {
+            MatchUrl matchUrl = (MatchUrl) annotation;
+            String[] value = matchUrl.value();
+            for (String s : value) {
+                matchUrlPatterns.add(Pattern.compile(s, Pattern.DOTALL | Pattern.CASE_INSENSITIVE));
+            }
+        }
+        annotation = clazz.getAnnotation(TargetUrl.class);
         if (annotation == null) {
             targetUrlPatterns.add(Pattern.compile(".*"));
         } else {
@@ -199,8 +211,8 @@ class PageModelExtractor {
 
     public Object process(Page page) {
         boolean matched = false;
-        for (Pattern targetPattern : targetUrlPatterns) {
-            if (targetPattern.matcher(page.getUrl().toString()).matches()) {
+        for (Pattern matchPattern : matchUrlPatterns) {
+            if (matchPattern.matcher(page.getUrl().toString()).matches()) {
                 matched = true;
             }
         }
@@ -300,6 +312,10 @@ class PageModelExtractor {
                     }
                 }
             }
+            //提取页面链接放入爬取队列的接口,因为提取页面的规则可能很复杂,注解无法处理,以接口方式处理感觉比较好
+            if (LinkExtraction.class.isAssignableFrom(clazz)) {
+                ((LinkExtraction) o).ExtractLinks(page);
+            }
             if (AfterExtractor.class.isAssignableFrom(clazz)) {
                 ((AfterExtractor) o).afterProcess(page);
             }
@@ -363,5 +379,9 @@ class PageModelExtractor {
 
     Selector getHelpUrlRegionSelector() {
         return helpUrlRegionSelector;
+    }
+
+    public List<Pattern> getMatchUrlPatterns() {
+        return matchUrlPatterns;
     }
 }

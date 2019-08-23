@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import us.codecraft.webmagic.Spider;
 import us.codecraft.webmagic.scheduler.MonitorableScheduler;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 
@@ -83,9 +84,10 @@ public class SpiderStatus implements SpiderStatusMXBean {
     }
 
     @Override
-    public int getPagePerSecond() {
+    public double getPagePerSecond() {
         int runSeconds = (int) (System.currentTimeMillis() - getStartTime().getTime()) / 1000;
-        return getSuccessPageCount() / runSeconds;
+        int successPageCount = getSuccessPageCount();
+        return new BigDecimal((float)successPageCount / runSeconds).setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
     }
 
 }

@@ -303,7 +303,7 @@ public class Spider implements Runnable, Task {
     public void run() {
         checkRunningStat();
         initComponent();
-        logger.info("Spider {} started!",getUUID());
+        logger.info("Spider {} started!", getUUID());
         while (!Thread.currentThread().isInterrupted() && stat.get() == STAT_RUNNING) {
             final Request request = scheduler.poll(this);
             if (request == null) {
@@ -320,7 +320,7 @@ public class Spider implements Runnable, Task {
                             processRequest(request);
                             onSuccess(request);
                         } catch (Exception e) {
-                            onError(request);
+                            onError(request, e);
                             logger.error("process request " + request + " error", e);
                         } finally {
                             pageCount.incrementAndGet();
@@ -338,10 +338,10 @@ public class Spider implements Runnable, Task {
         logger.info("Spider {} closed! {} pages downloaded.", getUUID(), pageCount.get());
     }
 
-    protected void onError(Request request) {
+    protected void onError(Request request, Exception e) {
         if (CollectionUtils.isNotEmpty(spiderListeners)) {
             for (SpiderListener spiderListener : spiderListeners) {
-                spiderListener.onError(request);
+                spiderListener.onError(request, e);
             }
         }
     }
@@ -402,7 +402,7 @@ public class Spider implements Runnable, Task {
 
     private void processRequest(Request request) {
         Page page = downloader.download(request, this);
-        if (page.isDownloadSuccess()){
+        if (page.isDownloadSuccess()) {
             onDownloadSuccess(request, page);
         } else {
             onDownloaderFail(request);
@@ -410,7 +410,7 @@ public class Spider implements Runnable, Task {
     }
 
     private void onDownloadSuccess(Request request, Page page) {
-        if (site.getAcceptStatCode().contains(page.getStatusCode())){
+        if (site.getAcceptStatCode().contains(page.getStatusCode())) {
             pageProcessor.process(page);
             extractAndAddRequests(page, spawnUrl);
             if (!page.getResultItems().isSkip()) {
@@ -419,15 +419,17 @@ public class Spider implements Runnable, Task {
                 }
             }
         } else {
-            logger.info("page status code error, page {} , code: {}", request.getUrl(), page.getStatusCode());
+            String error = String.format("page status code error, page %s , code: %s", request.getUrl(), page.getStatusCode());
+            logger.info(error);
+            throw new RuntimeException(error);
         }
         sleep(site.getSleepTime());
-        return;
     }
 
     private void onDownloaderFail(Request request) {
         if (site.getCycleRetryTimes() == 0) {
             sleep(site.getSleepTime());
+            throw new RuntimeException(String.format("page %s download failed.", request.getUrl()));
         } else {
             // for cycle retry
             doCycleRetry(request);
@@ -437,12 +439,16 @@ public class Spider implements Runnable, Task {
     private void doCycleRetry(Request request) {
         Object cycleTriedTimesObject = request.getExtra(Request.CYCLE_TRIED_TIMES);
         if (cycleTriedTimesObject == null) {
+            logger.info("page {} will retry 1 time, total retry times {}.", request.getUrl(), site.getCycleRetryTimes());
             addRequest(SerializationUtils.clone(request).setPriority(0).putExtra(Request.CYCLE_TRIED_TIMES, 1));
         } else {
             int cycleTriedTimes = (Integer) cycleTriedTimesObject;
             cycleTriedTimes++;
             if (cycleTriedTimes < site.getCycleRetryTimes()) {
+                logger.info("page {} will retry {} time, total retry times {}.", request.getUrl(), cycleTriedTimes, site.getCycleRetryTimes());
                 addRequest(SerializationUtils.clone(request).setPriority(0).putExtra(Request.CYCLE_TRIED_TIMES, cycleTriedTimes));
+            } else {
+                throw new RuntimeException(String.format("page %s download failed with retried %s times.", request.getUrl(), site.getCycleRetryTimes()));
             }
         }
         sleep(site.getRetrySleepTime());
@@ -452,14 +458,23 @@ public class Spider implements Runnable, Task {
         try {
             Thread.sleep(time);
         } catch (InterruptedException e) {
-            logger.error("Thread interrupted when sleep",e);
+            logger.error("Thread interrupted when sleep", e);
         }
     }
 
     protected void extractAndAddRequests(Page page, boolean spawnUrl) {
         if (spawnUrl && CollectionUtils.isNotEmpty(page.getTargetRequests())) {
+            int crawlDepth = site.getCrawlDepth();
+            int pageRequestDepth = page.getRequest().getCurrentDepth();
             for (Request request : page.getTargetRequests()) {
-                addRequest(request);
+                if (crawlDepth > 0) {
+                    if (pageRequestDepth < crawlDepth) {
+                        request.setCurrentDepth(pageRequestDepth + 1);
+                        addRequest(request);
+                    }
+                } else {
+                    addRequest(request);
+                }
             }
         }
     }
@@ -501,13 +516,13 @@ public class Spider implements Runnable, Task {
      * Download urls synchronizing.
      *
      * @param urls urls
-     * @param <T> type of process result
+     * @param <T>  type of process result
      * @return list downloaded
      */
     public <T> List<T> getAll(Collection<String> urls) {
         destroyWhenExit = false;
         spawnUrl = false;
-        if (startRequests!=null){
+        if (startRequests != null) {
             startRequests.clear();
         }
         for (Request request : UrlUtils.convertToRequests(urls)) {
@@ -604,7 +619,7 @@ public class Spider implements Runnable, Task {
      * start with more than one threads
      *
      * @param executorService executorService to run the spider
-     * @param threadNum threadNum
+     * @param threadNum       threadNum
      * @return this
      */
     public Spider thread(ExecutorService executorService, int threadNum) {

@@ -1,7 +1,5 @@
 package us.codecraft.webmagic.scheduler;
 
-import com.alibaba.fastjson.JSON;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -47,13 +45,15 @@ public class RedisPriorityScheduler extends RedisScheduler
             else if(request.getPriority() < 0)
                 jedis.zadd(getZsetMinusPriorityKey(task), request.getPriority(), request.getUrl());
             else
-                jedis.lpush(getQueueNoPriorityKey(task), request.getUrl());
+                jedis.rpush(getQueueNoPriorityKey(task), request.getUrl());
 
-            setExtrasInItem(jedis, request, task);
+            if (checkForAdditionalInfo(request)) {
+                setExtrasInItem(jedis, request, task);
+            }
         }
         finally
         {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
@@ -70,7 +70,7 @@ public class RedisPriorityScheduler extends RedisScheduler
         }
         finally
         {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
@@ -109,42 +109,35 @@ public class RedisPriorityScheduler extends RedisScheduler
         }
         finally
         {
-            pool.returnResource(jedis);
+            jedis.close();
         }
     }
 
     private String getZsetPlusPriorityKey(Task task)
     {
-        return ZSET_PREFIX + task.getUUID() + PLUS_PRIORITY_SUFFIX;
+        return getPrefix() + ZSET_PREFIX + task.getUUID() + PLUS_PRIORITY_SUFFIX;
     }
 
     private String getQueueNoPriorityKey(Task task)
     {
-        return QUEUE_PREFIX + task.getUUID() + NO_PRIORITY_SUFFIX;
+        return getPrefix() + QUEUE_PREFIX + task.getUUID() + NO_PRIORITY_SUFFIX;
     }
 
     private String getZsetMinusPriorityKey(Task task)
     {
-        return ZSET_PREFIX + task.getUUID() + MINUS_PRIORITY_SUFFIX;
+        return getPrefix() + ZSET_PREFIX + task.getUUID() + MINUS_PRIORITY_SUFFIX;
     }
 
-    private void setExtrasInItem(Jedis jedis,Request request, Task task)
-    {
-        if(request.getExtras() != null)
-        {
-            String field = DigestUtils.shaHex(request.getUrl());
-            String value = JSON.toJSONString(request);
-            jedis.hset(getItemKey(task), field, value);
+    @Override
+    public int getLeftRequestsCount(Task task) {
+        Jedis jedis = pool.getResource();
+        try {
+            Long size = jedis.llen(getQueueNoPriorityKey(task));
+            size += jedis.zcard(getZsetPlusPriorityKey(task));
+            size += jedis.zcard(getZsetMinusPriorityKey(task));
+            return size.intValue();
+        } finally {
+            jedis.close();
         }
-    }
-
-    private Request getExtrasInItem(Jedis jedis, String url, Task task)
-    {
-        String key      = getItemKey(task);
-        String field    = DigestUtils.shaHex(url);
-        byte[] bytes    = jedis.hget(key.getBytes(), field.getBytes());
-        if(bytes != null)
-            return JSON.parseObject(new String(bytes), Request.class);
-        return new Request(url);
     }
 }

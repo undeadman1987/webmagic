@@ -33,6 +33,8 @@ public class Site {
 
     private int timeOut = 5000;
 
+    private int crawlDepth = 0;
+
     private static final Set<Integer> DEFAULT_STATUS_CODE_SET = new HashSet<Integer>();
 
     private Set<Integer> acceptStatCode = DEFAULT_STATUS_CODE_SET;
@@ -324,6 +326,21 @@ public class Site {
      */
     public Site setDisableCookieManagement(boolean disableCookieManagement) {
         this.disableCookieManagement = disableCookieManagement;
+        return this;
+    }
+
+    public int getCrawlDepth() {
+        return crawlDepth;
+    }
+
+    /**
+     * Set crawl depth for site, 0 by default, it means unlimited<br>
+     *
+     * @param crawlDepth crawl depth
+     * @return this
+     */
+    public Site setCrawlDepth(int crawlDepth) {
+        this.crawlDepth = crawlDepth;
         return this;
     }
 

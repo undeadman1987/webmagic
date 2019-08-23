@@ -10,6 +10,7 @@ import java.lang.annotation.Target;
  *
  * @author code4crafter@gmail.com <br>
  * @since 0.2.0
+ * @deprecated
  */
 @Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE})

@@ -110,4 +110,13 @@ public class SpiderMonitor {
         mbeanServer.registerMBean(spiderStatus, objName);
     }
 
+    public synchronized SpiderMonitor unregister(Spider spider) throws JMException {
+        unRegisterMBean(spider);
+        return this;
+    }
+
+    protected void unRegisterMBean(Spider spider) throws MBeanRegistrationException, InstanceNotFoundException, MalformedObjectNameException {
+        ObjectName objName = new ObjectName(jmxServerName + ":name=" + UrlUtils.removePort(spider.getUUID()));
+        mbeanServer.unregisterMBean(objName);
+    }
 }
